@@ -1,0 +1,330 @@
+# 🏗️ 技术架构
+
+Sakura AI 企业级自动化测试平台技术架构说明。
+
+---
+
+## 系统架构图
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                         Sakura AI 系统架构                                │
+├──────────────────┬──────────────────┬──────────────────────────────────┤
+│   前端层         │     后端层       │         AI 执行层                 │
+│                  │                  │                                  │
+│ ┌──────────────┐ │ ┌──────────────┐ │ ┌─────────────────────────────┐  │
+│ │ React 18     │ │ │ Express API  │ │ │ AI Parser                   │  │
+│ │ TypeScript   │◄┼─┤ WebSocket    │◄┼─┤ Axure HTML Parser           │  │
+│ │ Tailwind CSS │ │ │ Prisma ORM   │ │ │ Test Generator (3阶段)       │  │
+│ │ ECharts      │ │ │ JWT Auth     │ │ │ MCP Client                  │  │
+│ └──────────────┘ │ └──────────────┘ │ └─────────────┬───────────────┘  │
+│                  │                  │               │                  │
+│                  │                  │ ┌─────────────┴───────────────┐  │
+│                  │                  │ │ RAG 知识增强层               │  │
+│                  │                  │ │ ┌─────────────────────────┐ │  │
+│                  │                  │ │ │ Qdrant 向量数据库       │ │  │
+│                  │                  │ │ │ - 业务规则知识库        │ │  │
+│                  │                  │ │ │ - 测试模式知识库        │ │  │
+│                  │                  │ │ │ - 历史踩坑知识库        │ │  │
+│                  │                  │ │ │ - 风险场景知识库        │ │  │
+│                  │                  │ │ └─────────────────────────┘ │  │
+│                  │                  │ │ ┌─────────────────────────┐ │  │
+│                  │                  │ │ │ 阿里通义 Embedding API  │ │  │
+│                  │                  │ │ │ (1024维向量化)          │ │  │
+│                  │                  │ │ └─────────────────────────┘ │  │
+│                  │                  │ └─────────────────────────────┘  │
+│                  │                  │               │                  │
+│                  │                  │ ┌─────────────┴───────────────┐  │
+│                  │                  │ │ Playwright 浏览器自动化      │  │
+│                  │                  │ │ - 元素识别  - 截图保存      │  │
+│                  │                  │ └─────────────────────────────┘  │
+└──────────────────┴──────────────────┴──────────────────────────────────┘
+                              │
+                       ┌──────┴──────┐
+                       │   MySQL     │
+                       │   数据库    │
+                       └─────────────┘
+```
+
+---
+
+## 核心技术栈
+
+### 前端技术
+
+| 技术 | 版本 | 说明 |
+|------|------|------|
+| React | 18.3.1 | 现代化前端框架 |
+| TypeScript | 5.5.3 | 类型安全的 JavaScript |
+| Tailwind CSS | 3.4.1 | 实用优先的 CSS 框架 |
+| Framer Motion | 10.16.16 | 流畅的动画库 |
+| Vite | 5.4.2 | 极速构建工具 |
+| ECharts | 最新版 | 数据可视化 |
+
+### 后端技术
+
+| 技术 | 版本 | 说明 |
+|------|------|------|
+| Node.js | >= 18 | 服务端运行时 |
+| Express | 4.18.0 | Web 框架 |
+| Prisma | 6.11.1 | 现代化 ORM |
+| MySQL | >= 8.0 | 关系型数据库 |
+| JWT | 9.0.2 | 身份认证 |
+| WebSocket (ws) | 8.18.3 | 实时通信 |
+
+### AI 与测试
+
+| 技术 | 版本 | 说明 |
+|------|------|------|
+| MCP SDK | 1.0.0 | 模型上下文协议 |
+| Playwright | 1.54.2 | 浏览器自动化 |
+| Cheerio | 1.1.2 | HTML 解析 |
+| Qdrant | 1.12+ | 向量数据库 (RAG) |
+| 阿里通义 Embedding | v4 | 1024维向量化 (RAG) |
+
+---
+
+## 项目结构
+
+```
+project/
+├── src/                    # 前端源码
+│   ├── components/         # React 组件
+│   │   ├── AIBulkUpdateModal.tsx
+│   │   ├── MarkdownEditor.tsx
+│   │   └── ...
+│   ├── pages/             # 页面组件
+│   │   ├── TestCases.tsx
+│   │   ├── TestRuns.tsx
+│   │   ├── FunctionalTestCaseGenerator.tsx
+│   │   └── ...
+│   ├── services/          # API 客户端
+│   │   ├── api.ts
+│   │   ├── testService.ts
+│   │   └── ...
+│   └── types/             # TypeScript 类型
+│       └── test.ts
+├── server/                # 后端源码
+│   ├── routes/            # API 路由
+│   │   ├── test.ts
+│   │   ├── aiBulkUpdate.ts
+│   │   └── ...
+│   ├── services/          # 业务服务
+│   │   ├── mcpClient.ts              # MCP 客户端
+│   │   ├── aiParser.ts               # AI 解析器
+│   │   ├── testExecution.ts          # 测试执行
+│   │   ├── testCaseKnowledgeBase.ts  # RAG 知识库
+│   │   ├── axureService.ts           # Axure 解析
+│   │   └── ...
+│   ├── middleware/        # 中间件
+│   │   ├── auth.ts
+│   │   └── ...
+│   └── types/             # 后端类型
+├── prisma/                # 数据库
+│   ├── schema.prisma      # 数据库模式
+│   └── migrations/        # 迁移文件
+├── docs/                  # 文档
+│   ├── INSTALLATION.md
+│   ├── AI_GENERATOR.md
+│   ├── RAG_SETUP.md
+│   ├── EXECUTION.md
+│   ├── ARCHITECTURE.md
+│   ├── CONFIGURATION.md
+│   └── TROUBLESHOOTING.md
+├── scripts/               # 工具脚本
+│   └── start.cjs
+└── README.md             # 主文档
+```
+
+---
+
+## 核心服务详解
+
+### 1. AI 解析器 (aiParser.ts)
+
+**功能**：自然语言 → MCP 命令
+
+**关键方法**：
+- `parseNextStep()` - 解析下一个步骤
+- `generateMCPCommand()` - 生成 MCP 命令
+- `buildOperationUserPrompt()` - 构建 AI 提示词
+
+### 2. MCP 客户端 (mcpClient.ts)
+
+**功能**：MCP 命令 → Playwright 操作
+
+**关键方法**：
+- `initialize()` - 初始化浏览器
+- `executeStep()` - 执行单个步骤
+- `getSnapshot()` - 获取页面快照
+- `takeScreenshot()` - 截图
+
+### 3. 测试执行器 (testExecution.ts)
+
+**功能**：编排整个测试执行流程
+
+**关键方法**：
+- `runTest()` - 运行测试用例
+- `runSuite()` - 运行测试套件
+
+### 4. RAG 知识库 (testCaseKnowledgeBase.ts)
+
+**功能**：向量检索和知识增强
+
+**关键方法**：
+- `searchKnowledge()` - 语义搜索
+- `addKnowledge()` - 添加知识
+- `buildKnowledgeContext()` - 构建知识上下文
+
+### 5. Axure 解析器 (axureService.ts)
+
+**功能**：解析 Axure HTML 文件
+
+**关键方法**：
+- `parseAxureHTML()` - 解析 HTML
+- `extractPageElements()` - 提取页面元素
+- `generateRequirementDoc()` - 生成需求文档
+
+---
+
+## 数据库设计
+
+### 核心表
+
+| 表名 | 说明 | 关键字段 |
+|------|------|---------|
+| `test_cases` | 测试用例 | id, title, steps (JSON), system, module |
+| `test_suites` | 测试套件 | id, name, test_cases (JSON) |
+| `test_case_executions` | 执行记录 | id, test_case_id, status, logs (JSON) |
+| `bulk_edit_sessions` | AI 批量修改会话 | id, change_description, affected_count |
+| `case_patch_proposals` | 修改提案 | id, session_id, old_content (JSON), new_content (JSON) |
+| `users` | 用户 | id, email, password_hash, role |
+
+### AI 专用枚举
+
+- `proposal_risk_level`: low / medium / high
+- `proposal_apply_status`: pending / applied / rejected
+
+---
+
+## API 端点
+
+### 测试管理
+
+- `GET /api/test/cases` - 获取测试用例列表
+- `POST /api/test/cases` - 创建测试用例
+- `PUT /api/test/cases/:id` - 更新测试用例
+- `DELETE /api/test/cases/:id` - 删除测试用例
+
+### 测试执行
+
+- `POST /api/test/execute` - 执行测试用例
+- `GET /api/test/runs` - 获取执行记录
+- `GET /api/test/runs/:runId` - 获取单个执行记录
+
+### AI 生成
+
+- `POST /api/functional-test-cases/parse-axure` - 解析 Axure HTML
+- `POST /api/functional-test-cases/generate-modules` - 生成测试模块
+- `POST /api/functional-test-cases/generate-purposes` - 生成测试目的
+- `POST /api/functional-test-cases/generate-test-points` - 生成测试点
+
+### AI 批量修改
+
+- `POST /api/ai-bulk-update/sessions` - 创建修改会话
+- `POST /api/ai-bulk-update/sessions/:id/proposals` - 生成修改提案
+- `POST /api/ai-bulk-update/proposals/:id/apply` - 应用提案
+
+### 知识库
+
+- `POST /api/knowledge` - 添加知识
+- `GET /api/knowledge/search` - 搜索知识
+- `POST /api/knowledge/batch-import` - 批量导入
+
+---
+
+## WebSocket 消息格式
+
+### 测试执行状态更新
+
+```json
+{
+  "type": "test_update",
+  "runId": "run-123",
+  "data": {
+    "status": "running",
+    "currentStep": 2,
+    "totalSteps": 5,
+    "progress": 40,
+    "lastMessage": "已完成点击登录按钮"
+  }
+}
+```
+
+### 测试执行完成
+
+```json
+{
+  "type": "test_complete",
+  "runId": "run-123",
+  "data": {
+    "status": "completed",
+    "passed": 4,
+    "failed": 1,
+    "duration": 12345
+  }
+}
+```
+
+---
+
+## 安全机制
+
+### 认证与授权
+
+- **JWT Token 认证**：安全可靠，支持过期和刷新
+- **角色权限管理**：超级管理员 / 普通用户
+- **密码加密**：bcrypt 安全加密
+
+### API 安全
+
+- **CORS 控制**：限制跨域访问
+- **请求限流**：防止滥用
+- **输入验证**：防止 SQL 注入和 XSS
+
+---
+
+## 部署架构
+
+### 推荐部署方式
+
+```
+┌─────────────────────────────────────┐
+│          Load Balancer (Nginx)      │
+└──────────────┬──────────────────────┘
+               │
+      ┌────────┴────────┐
+      │                 │
+┌─────▼──────┐   ┌──────▼─────┐
+│  Frontend  │   │   Backend  │
+│  (Static)  │   │  (Node.js) │
+└────────────┘   └──────┬─────┘
+                        │
+           ┌────────────┼────────────┐
+           │            │            │
+      ┌────▼───┐   ┌────▼───┐  ┌────▼───┐
+      │ MySQL  │   │ Qdrant │  │ Redis  │
+      └────────┘   └────────┘  └────────┘
+```
+
+### 推荐配置
+
+- **前端**: Nginx 静态文件托管
+- **后端**: PM2 进程管理，多实例部署
+- **数据库**: MySQL 主从复制
+- **RAG**: Qdrant 集群部署
+- **缓存**: Redis 缓存热点数据
+
+---
+
+**返回**: [README](../README.md)

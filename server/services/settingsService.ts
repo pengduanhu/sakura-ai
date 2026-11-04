@@ -1,0 +1,361 @@
+import { PrismaClient } from '../../src/generated/prisma/index.js';
+import { DatabaseService } from './databaseService.js';
+import { modelRegistry } from '../../src/services/modelRegistry.js';
+import { validateLLMSettings as validateLLMSettingsShared } from '../../src/utils/llmSettingsValidation.js';
+import type { LLMSettings, AppSettings, KnowledgeSettings, ValidationResult } from '../../src/services/settingsService.js';
+import { getNow } from '../utils/timezone.js';
+
+// 后端设置服务类
+export class BackendSettingsService {
+  private static instance: BackendSettingsService | null = null;
+  private databaseService: DatabaseService;
+  private prisma: PrismaClient; // 保持兼容性，内部使用
+
+  private constructor(databaseService?: DatabaseService) {
+    // 🔥 使用依赖注入的数据库服务
+    this.databaseService = databaseService || DatabaseService.getInstance();
+    this.prisma = this.databaseService.getClient();
+  }
+
+  // 单例模式（支持依赖注入）
+  public static getInstance(databaseService?: DatabaseService): BackendSettingsService {
+    if (!BackendSettingsService.instance) {
+      BackendSettingsService.instance = new BackendSettingsService(databaseService);
+    }
+    return BackendSettingsService.instance;
+  }
+
+  // 🔥 新增：重置单例实例（主要用于测试）
+  public static resetInstance(): void {
+    BackendSettingsService.instance = null;
+  }
+
+  // 获取LLM设置
+  public async getLLMSettings(): Promise<LLMSettings> {
+    try {
+      const settings = await this.loadSettingsFromDB();
+      return this.migrateLegacyLLMSettings(settings.llm);
+    } catch (error) {
+      console.warn('Failed to load LLM settings from database, using defaults:', error);
+      return this.migrateLegacyLLMSettings(this.getDefaultLLMSettings());
+    }
+  }
+
+  public async getKnowledgeSettings(): Promise<KnowledgeSettings> {
+    try {
+      const settings = await this.loadSettingsFromDB();
+      return settings.knowledge;
+    } catch (error) {
+      console.warn('Failed to load knowledge settings from database, using defaults:', error);
+      return this.getDefaultKnowledgeSettings();
+    }
+  }
+
+  public async saveKnowledgeSettings(knowledgeSettings: KnowledgeSettings): Promise<KnowledgeSettings> {
+    try {
+      const normalized = this.normalizeKnowledgeSettings(knowledgeSettings);
+      const currentSettings = await this.loadSettingsFromDB();
+      currentSettings.knowledge = normalized;
+      await this.saveSettingsToDB(currentSettings);
+      console.log('Knowledge settings saved');
+      return normalized;
+    } catch (error: any) {
+      console.error('鉂?Failed to save knowledge settings:', error);
+      if (!error.type) {
+        error.type = 'CONFIG_ERROR';
+      }
+      throw error;
+    }
+  }
+
+  // 保存LLM设置
+  public async saveLLMSettings(llmSettings: LLMSettings): Promise<void> {
+    try {
+      // 验证设置
+      const validation = await this.validateLLMSettings(llmSettings);
+      if (!validation.isValid) {
+        const errorMessages = validation.errors.map(e => e.message).join(', ');
+        const error = new Error(`配置验证失败: ${errorMessages}`);
+        (error as any).validationErrors = validation.errors;
+        throw error;
+      }
+
+      // 🔥 如果 baseUrl 未提供，根据模型信息自动填充
+      const settingsWithBaseUrl = this.migrateLegacyLLMSettings({ ...llmSettings });
+      if (!settingsWithBaseUrl.baseUrl) {
+        const modelInfo = modelRegistry.getModelById(llmSettings.selectedModelId);
+        if (modelInfo) {
+          settingsWithBaseUrl.baseUrl = modelInfo.customBaseUrl || 'https://openrouter.ai/api/v1';
+          console.log(`📋 自动填充 baseUrl: ${settingsWithBaseUrl.baseUrl}`);
+        }
+      }
+
+      // 加载现有设置
+      const currentSettings = await this.loadSettingsFromDB();
+      
+      // 更新LLM设置（包含 baseUrl）
+      currentSettings.llm = settingsWithBaseUrl;
+      
+      // 保存到数据库
+      await this.saveSettingsToDB(currentSettings);
+      
+      // 只在保存成功后打印一次简洁的日志
+      console.log('✅ [后端] LLM配置已保存');
+    } catch (error: any) {
+      console.error('❌ Failed to save LLM settings:', error);
+      
+      // 增强错误信息
+      if (!error.type) {
+        error.type = 'CONFIG_ERROR';
+      }
+      
+      throw error;
+    }
+  }
+
+  // 验证LLM设置
+  public async validateLLMSettings(settings: LLMSettings): Promise<ValidationResult> {
+    // 🔥 使用共享的验证工具，避免代码重复
+    return validateLLMSettingsShared(settings);
+  }
+
+  // 获取完整设置
+  public async getSettings(): Promise<AppSettings> {
+    return await this.loadSettingsFromDB();
+  }
+
+  // 重置为默认设置
+  public async resetToDefaults(): Promise<void> {
+    try {
+      const defaultSettings = this.getDefaultSettings();
+      await this.saveSettingsToDB(defaultSettings);
+      console.log('✅ Settings reset to defaults');
+    } catch (error: any) {
+      console.error('❌ Failed to reset settings:', error);
+      throw error;
+    }
+  }
+
+  // 导出设置为JSON
+  public async exportSettings(): Promise<string> {
+    try {
+      const settings = await this.loadSettingsFromDB();
+      const exportData = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        settings: settings
+      };
+      return JSON.stringify(exportData, null, 2);
+    } catch (error) {
+      console.error('❌ Failed to export settings:', error);
+      throw new Error('导出设置失败');
+    }
+  }
+
+  // 从JSON导入设置
+  public async importSettings(jsonData: string): Promise<void> {
+    try {
+      const importData = JSON.parse(jsonData);
+      
+      // 验证导入数据格式
+      if (!importData.settings || !importData.version) {
+        throw new Error('导入数据格式无效');
+      }
+      
+      // 验证版本兼容性
+      if (importData.version !== '1.0') {
+        throw new Error(`不支持的配置版本: ${importData.version}`);
+      }
+      
+      // 验证LLM设置
+      if (importData.settings.llm) {
+        const validation = await this.validateLLMSettings(importData.settings.llm);
+        if (!validation.isValid) {
+          const errorMessages = validation.errors.map(e => e.message).join(', ');
+          throw new Error(`导入的LLM配置无效: ${errorMessages}`);
+        }
+      }
+      
+      // 合并设置
+      const mergedSettings = this.mergeWithDefaults(importData.settings);
+      
+      // 保存到数据库
+      await this.saveSettingsToDB(mergedSettings);
+      
+      console.log('✅ Settings imported successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to import settings:', error);
+      
+      if (error.name === 'SyntaxError') {
+        throw new Error('导入数据格式错误，请检查JSON格式');
+      }
+      
+      throw error;
+    }
+  }
+
+  // 从数据库加载设置
+  private async loadSettingsFromDB(): Promise<AppSettings> {
+    try {
+      const settingsRecord = await this.prisma.settings.findUnique({
+        where: { key: 'app_settings' }
+      });
+
+      if (settingsRecord && settingsRecord.value) {
+        const parsed = JSON.parse(settingsRecord.value);
+        return this.mergeWithDefaults(parsed);
+      }
+    } catch (error) {
+      console.warn('Failed to load settings from database:', error);
+    }
+
+    return this.getDefaultSettings();
+  }
+
+  // 保存设置到数据库
+  private async saveSettingsToDB(settings: AppSettings): Promise<void> {
+    try {
+      await this.prisma.settings.upsert({
+        where: { key: 'app_settings' },
+        update: {
+          value: JSON.stringify(settings),
+          updated_at: getNow()
+        },
+        create: {
+          key: 'app_settings',
+          value: JSON.stringify(settings),
+          updated_at: getNow()
+        }
+      });
+
+      console.log('✅ Settings saved to database successfully');
+    } catch (error) {
+      console.error('❌ Failed to save settings to database:', error);
+      throw new Error(`数据库保存失败: ${error}`);
+    }
+  }
+
+  // 获取默认LLM设置
+  private getDefaultLLMSettings(): LLMSettings {
+    const defaultModel = modelRegistry.getModelById('deepseek-chat-v3') || modelRegistry.getDefaultModel();
+    return {
+      selectedModelId: 'deepseek-chat-v3',
+      apiKey: process.env.OPENROUTER_API_KEY || '',
+      baseUrl: defaultModel.customBaseUrl || 'https://openrouter.ai/api/v1', // 🔥 添加 baseUrl
+      customConfig: {
+        ...defaultModel.defaultConfig
+      },
+      inputLimits: {
+        maxInputTokensOverride: undefined,
+        modelContextWindowsJson: '',
+        inputSafetyMarginTokens: 1500,
+      }
+    };
+  }
+
+  // 获取默认设置
+  private getDefaultKnowledgeSettings(): KnowledgeSettings {
+    const provider = (process.env.EMBEDDING_PROVIDER || 'aliyun') as KnowledgeSettings['embeddingProvider'];
+    const providerDefaults: Record<string, { baseUrl: string; model: string; dimension: number }> = {
+      aliyun: {
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        model: 'text-embedding-v4',
+        dimension: 1024
+      },
+      openai: {
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'text-embedding-3-small',
+        dimension: 1536
+      },
+      gemini: {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        model: 'text-embedding-004',
+        dimension: 768
+      },
+      xinference: {
+        baseUrl: 'http://localhost:9997/v1',
+        model: 'bge-large-zh-v1.5',
+        dimension: 1024
+      }
+    };
+    const fallback = providerDefaults[provider] || providerDefaults.aliyun;
+    const envDimension = parseInt(process.env.EMBEDDING_DIMENSION || '', 10);
+
+    return {
+      qdrantUrl: process.env.QDRANT_URL || 'http://172.19.5.223:6333',
+      embeddingProvider: providerDefaults[provider] ? provider : 'aliyun',
+      embeddingApiBaseUrl: process.env.EMBEDDING_API_BASE_URL || fallback.baseUrl,
+      embeddingApiKey: process.env.EMBEDDING_API_KEY || process.env.GEMINI_API_KEY || '',
+      embeddingModel: process.env.EMBEDDING_MODEL || fallback.model,
+      embeddingDimension: Number.isFinite(envDimension) && envDimension > 0 ? envDimension : fallback.dimension
+    };
+  }
+
+  private normalizeKnowledgeSettings(settings: Partial<KnowledgeSettings>): KnowledgeSettings {
+    const defaults = this.getDefaultKnowledgeSettings();
+    const merged = {
+      ...defaults,
+      ...settings
+    };
+    const provider = ['aliyun', 'openai', 'gemini', 'xinference'].includes(merged.embeddingProvider)
+      ? merged.embeddingProvider
+      : defaults.embeddingProvider;
+    const dimension = Number(merged.embeddingDimension);
+
+    return {
+      ...merged,
+      qdrantUrl: String(merged.qdrantUrl || defaults.qdrantUrl).trim(),
+      embeddingProvider: provider,
+      embeddingApiBaseUrl: String(merged.embeddingApiBaseUrl || defaults.embeddingApiBaseUrl).trim().replace(/\/$/, ''),
+      embeddingApiKey: String(merged.embeddingApiKey || ''),
+      embeddingModel: String(merged.embeddingModel || defaults.embeddingModel).trim(),
+      embeddingDimension: Number.isFinite(dimension) && dimension > 0 ? dimension : defaults.embeddingDimension
+    };
+  }
+
+  private getDefaultSettings(): AppSettings {
+    return {
+      llm: this.getDefaultLLMSettings(),
+      knowledge: this.getDefaultKnowledgeSettings(),
+      system: {
+        timeout: 300,
+        maxConcurrency: 10,
+        logRetentionDays: 90
+      }
+    };
+  }
+
+  // 合并默认设置
+  private mergeWithDefaults(stored: Partial<AppSettings>): AppSettings {
+    const defaults = this.getDefaultSettings();
+    
+    return {
+      llm: {
+        ...defaults.llm,
+        ...this.migrateLegacyLLMSettings(stored.llm as LLMSettings)
+      },
+      knowledge: this.normalizeKnowledgeSettings(stored.knowledge || defaults.knowledge),
+      system: {
+        ...defaults.system,
+        ...stored.system
+      }
+    };
+  }
+
+  private migrateLegacyLLMSettings(settings: LLMSettings): LLMSettings {
+    if (!settings) return settings;
+    if (settings.inputLimits) return settings;
+    if (settings.requirementDoc) {
+      return {
+        ...settings,
+        inputLimits: { ...settings.requirementDoc },
+      };
+    }
+    return settings;
+  }
+
+  // 清理资源
+  public async disconnect(): Promise<void> {
+    await this.prisma.$disconnect();
+  }
+}

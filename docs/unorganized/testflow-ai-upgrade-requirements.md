@@ -1,0 +1,451 @@
+# 🚀 Sakura AI 智能解析引擎升级需求文档
+
+## 📋 项目概述
+
+**项目名称：** Sakura AI 自动化测试平台智能解析引擎升级  
+**版本：** v2.0  
+**日期：** 2025-01-28  
+**负责人：** 用户 + Claude Code  
+
+## 🎯 升级目标
+
+将现有的基于规则匹配的 `aiParser.ts` 升级为基于大模型的智能解析引擎，支持完整的 Web 自动化测试操作集，从当前的 40-50% 场景覆盖率提升到 85-90%。
+
+## 📊 当前系统分析
+
+### **现状问题：**
+1. **AI解析能力不足** - 只有简单的 `if/else` 规则匹配
+2. **操作类型有限** - 仅支持导航、点击、输入、等待 4 种基础操作
+3. **自然语言理解差** - 无法处理复杂的用户指令
+4. **执行成功率低** - 导航后经常找不到元素，后续操作中断
+5. **缺少上下文感知** - 每个步骤独立解析，无整体理解
+
+### **核心执行问题（需要优先解决）：**
+6. **执行中断问题** - 导航后找不到元素，整个测试流程直接终止
+7. **虚假成功状态** - 日志显示执行成功但实际操作未生效
+8. **容错性差** - 任何一步失败就中断，没有智能重试机制
+9. **页面加载检测不完善** - 导航后立即操作，元素可能未加载完成
+10. **操作效果验证缺失** - 无法确认操作是否真正生效
+
+### **技术债务：**
+- `aiParser.ts:192-246` 的 `generateMCPCommand` 方法全是硬编码规则
+- 前端有完整的 LLM 配置界面但后端未使用
+- 元素定位策略过于简单，容错性差
+- `testExecution.ts:229-244` 错误处理过于严格，缺少容错机制
+- MCP操作成功状态判断不准确，缺少实际效果验证
+
+## 🔧 技术解决方案
+
+### **方案选择：渐进式升级（风险可控）**
+
+**升级策略：**
+```
+大模型智能解析 (优先)
+    ↓ 失败时
+多策略智能重试 (容错)
+    ↓ 失败时
+增强规则匹配 (降级)
+    ↓ 失败时  
+用户提示介入 (兜底)
+```
+
+**执行稳定性优化策略：**
+```
+页面完全加载检测
+    ↓
+智能元素等待机制
+    ↓
+多重验证确保操作生效
+    ↓
+失败时自动重试和降级
+```
+
+### **核心改动范围：**
+
+1. **主要修改文件：**
+   - `server/services/aiParser.ts` - 核心解析逻辑重构
+   - `server/services/testExecution.ts` - 执行稳定性和容错机制重构
+   - `server/services/mcpClient.ts` - 操作效果验证增强
+   - `server/index.ts` - 服务初始化配置
+
+2. **保持不变：**
+   - 整体系统架构
+   - MCP + Playwright 技术栈
+   - WebSocket 实时通信
+   - 前端界面和交互
+
+## 📋 完整操作支持列表
+
+### **页面导航类 (7种)**
+- `browser_navigate` - 导航到页面
+- `browser_back` - 后退
+- `browser_forward` - 前进
+- `browser_refresh` - 刷新页面
+- `browser_new_tab` - 新建标签页
+- `browser_close_tab` - 关闭标签页
+- `browser_switch_tab` - 切换标签页
+
+### **元素交互类 (12种)**
+- `browser_click` - 点击元素
+- `browser_double_click` - 双击元素
+- `browser_right_click` - 右键点击
+- `browser_type` - 输入文本
+- `browser_clear` - 清空输入框
+- `browser_hover` - 悬停元素
+- `browser_focus` - 聚焦元素
+- `browser_blur` - 失焦元素
+
+### **表单操作类 (8种)**
+- `browser_select_option` - 下拉框选择
+- `browser_check` - 勾选复选框
+- `browser_uncheck` - 取消勾选
+- `browser_upload_file` - 文件上传
+- `browser_drag_and_drop` - 拖拽操作
+
+### **页面滚动类 (6种)**
+- `browser_scroll_down` - 向下滚动
+- `browser_scroll_up` - 向上滚动
+- `browser_scroll_to_top` - 滚动到顶部
+- `browser_scroll_to_bottom` - 滚动到底部
+- `browser_scroll_to_element` - 滚动到指定元素
+- `browser_scroll_by` - 按像素滚动
+
+### **键盘操作类 (5种)**
+- `browser_press_key` - 按键
+- `browser_key_combination` - 组合键 (Ctrl+C, Ctrl+V等)
+- `browser_type_with_delay` - 延迟输入
+
+### **等待验证类 (8种)**
+- `browser_wait_for` - 等待时间
+- `browser_wait_for_element` - 等待元素出现
+- `browser_wait_for_text` - 等待文本出现
+- `browser_wait_for_url` - 等待URL变化
+- `browser_wait_for_load` - 等待页面加载完成
+
+### **断言验证类 (7种)**
+- `browser_assert_text` - 验证文本存在
+- `browser_assert_element` - 验证元素存在
+- `browser_assert_url` - 验证URL
+- `browser_assert_title` - 验证页面标题
+- `browser_assert_attribute` - 验证元素属性
+
+### **截图调试类 (4种)**
+- `browser_screenshot` - 截图
+- `browser_screenshot_element` - 元素截图
+- `browser_get_text` - 获取元素文本
+- `browser_get_attribute` - 获取元素属性
+
+**总计：从 5 种操作扩展到 53 种操作**
+
+## 🧠 大模型集成方案
+
+### **API配置：**
+```typescript
+interface LLMConfig {
+  apiKey: string;           // OpenRouter API Key
+  baseUrl: string;          // 'https://openrouter.ai/api/v1'
+  model: string;            // 'anthropic/claude-3.5-sonnet'
+  temperature: number;      // 0.1 (低温度确保稳定)
+  maxTokens: number;        // 400
+}
+```
+
+### **调用流程：**
+```
+用户指令 + 页面快照
+    ↓
+智能提示词构建
+    ↓
+大模型API调用
+    ↓
+响应解析和验证
+    ↓
+MCP命令生成
+```
+
+### **提示词设计框架：**
+
+**系统角色定义：**
+- 身份：专业的Web自动化测试专家
+- 任务：将自然语言转换为精确的MCP命令
+- 约束：严格的JSON格式输出
+
+**操作映射知识库：**
+- 完整的53种MCP工具说明
+- 参数格式和使用示例
+- 智能识别规则和策略
+
+**上下文分析能力：**
+- 页面结构理解（表单、列表、详情页）
+- 元素关系推理（父子、同级、功能关联）
+- 操作序列理解（登录流程、购买流程）
+- 截图数据分析（每步执行结果的视觉验证）
+
+## 🔄 核心代码改动计划
+
+### **1. AITestParser 类重构**
+
+**文件：** `server/services/aiParser.ts`
+
+**主要修改：**
+```typescript
+// 添加LLM配置支持
+constructor(mcpClient: PlaywrightMcpClient, llmConfig?: LLMConfig)
+
+// 重写核心方法
+private async generateMCPCommand(stepDescription: string, snapshot: any): Promise<MCPCommand>
+
+// 新增核心方法
+private async callLLM(prompt: string): Promise<string>
+private buildSmartPrompt(stepDescription: string, pageContext: any): string  
+private extractPageContext(snapshot: string): PageContext
+private parseLLMResponse(llmResponse: string): MCPCommand
+private validateMCPArguments(toolName: string, args: any): void
+private fallbackToRuleBasedParsing(stepDescription: string): MCPCommand
+```
+
+### **2. TestExecution 执行稳定性重构**
+
+**文件：** `server/services/testExecution.ts`
+
+**关键修改：**
+```typescript
+// 重构执行流程 - 增加容错机制
+private async executeStepWithRetryAndFallback(step: TestStep, runId: string): Promise<ExecutionResult>
+
+// 增强页面加载检测
+private async waitForPageFullyLoaded(runId: string): Promise<void>
+
+// 操作效果验证
+private async verifyOperationSuccess(step: TestStep, runId: string): Promise<boolean>
+
+// 智能重试策略
+private async retryWithDifferentStrategies(step: TestStep, runId: string): Promise<ExecutionResult>
+
+// MCP连接健康检查
+private async ensureMcpConnectionHealth(runId: string): Promise<void>
+```
+
+### **3. MCP客户端操作验证增强**
+
+**文件：** `server/services/mcpClient.ts`
+
+**关键修改：**
+```typescript
+// 操作后状态验证
+private async verifyOperationEffect(operation: string, targetRef: string): Promise<boolean>
+
+// 页面稳定性检测
+private async waitForPageStability(runId: string): Promise<void>
+
+// 元素可交互性验证
+private async ensureElementInteractable(elementRef: string): Promise<boolean>
+```
+
+### **4. 页面理解增强**
+
+**从简单文本解析 → 结构化页面分析：**
+```typescript
+interface PageContext {
+  pageInfo: {
+    url: string;
+    title: string;
+  };
+  availableElements: Array<{
+    ref: string;
+    role: string;
+    text: string;
+    options?: string[];  // 下拉框选项
+    importance: number;
+  }>;
+  pageFeatures: {
+    hasFormElements: boolean;
+    hasSelectBoxes: boolean;
+    hasLongContent: boolean;
+    elementCount: number;
+  };
+}
+```
+
+### **5. 智能容错机制**
+
+**多层次执行策略：**
+```typescript
+async executeWithFallback(step: TestStep, runId: string) {
+  const strategies = [
+    () => this.smartLLMParsing(step, pageSnapshot),
+    () => this.enhancedRuleMatching(step),
+    () => this.basicRuleMatching(step)
+  ];
+  
+  for (const strategy of strategies) {
+    try {
+      const result = await strategy();
+      if (result.success) return result;
+    } catch (error) {
+      console.warn(`策略失败，尝试下一个: ${error.message}`);
+    }
+  }
+  
+  throw new Error('所有解析策略都失败');
+}
+```
+
+## 📝 自然语言指令示例
+
+### **滚动操作：**
+```
+"向下滚动页面" → {"name": "browser_scroll_down", "arguments": {"pixels": 500}}
+"滚动到页面底部" → {"name": "browser_scroll_to_bottom", "arguments": {}}
+"滚动到搜索框位置" → {"name": "browser_scroll_to_element", "arguments": {"ref": "search_input"}}
+```
+
+### **表单操作：**
+```
+"选择城市下拉框中的北京" → {"name": "browser_select_option", "arguments": {"ref": "city_select", "value": "北京"}}
+"勾选同意协议的复选框" → {"name": "browser_check", "arguments": {"ref": "agreement_checkbox"}}
+"在用户名输入框输入admin" → {"name": "browser_type", "arguments": {"ref": "username_input", "text": "admin"}}
+```
+
+### **键盘和等待：**
+```
+"按回车键提交" → {"name": "browser_press_key", "arguments": {"key": "Enter"}}
+"按Ctrl+A全选文本" → {"name": "browser_key_combination", "arguments": {"keys": ["Ctrl", "A"]}}
+"等待登录成功页面出现" → {"name": "browser_wait_for_text", "arguments": {"text": "登录成功", "timeout": 10000}}
+```
+
+### **验证操作：**
+```
+"验证页面标题包含用户中心" → {"name": "browser_assert_title", "arguments": {"expected_title": "*用户中心*"}}
+"检查提交按钮是否可见" → {"name": "browser_assert_element", "arguments": {"ref": "submit_btn", "condition": "visible"}}
+```
+
+## 📊 预期效果指标
+
+### **量化提升目标：**
+
+| 指标 | 当前状态 | 目标状态 | 提升幅度 |
+|------|----------|----------|----------|
+| 指令理解准确率 | 60% | 90% | +50% |
+| 操作类型覆盖 | 5种 | 53种 | +960% |
+| 复杂场景成功率 | 30% | 80% | +167% |
+| 执行稳定性 | 40% | 85% | +113% |
+
+### **用户体验提升：**
+- ✅ 支持自然语言描述复杂操作序列
+- ✅ 智能理解页面结构和元素关系  
+- ✅ 自动处理常见的交互场景
+- ✅ 提供详细的错误提示和建议
+- ✅ 每步执行自动截图，完整记录测试过程
+- ✅ 截图数据库存储，便于问题追溯和分析
+
+## 🚀 实施计划
+
+### **Phase 1: 执行稳定性修复 (预计1天) - 优先级最高**
+- 修复执行中断问题：增加重试和容错机制
+- 修复虚假成功状态：增加操作效果验证
+- 完善页面加载检测：确保元素完全加载后再操作
+- 测试基础执行流程稳定性
+
+### **Phase 2: 大模型智能解析集成 (预计1-2天)**
+- 集成大模型API调用逻辑
+- 重写 `generateMCPCommand` 方法
+- 实现基础的智能解析能力
+- 测试核心功能是否正常
+
+### **Phase 3: 操作扩展 (预计2-3天)**
+- 添加完整的53种MCP工具支持
+- 实现页面结构化分析
+- 完善提示词工程
+- 增加参数验证机制
+
+### **Phase 4: 智能优化 (预计2-3天)**
+- 优化上下文理解能力
+- 完善高级容错和自愈机制
+- 性能优化和错误处理
+- 全面测试各种使用场景
+
+### **Phase 5: 生产级完善 (持续)**
+- 边缘情况处理
+- 用户反馈收集和优化
+- 性能监控和改进
+
+## 🔧 开发环境准备
+
+### **必需资源：**
+1. **OpenRouter API Key** - 用于调用大模型
+2. **测试用例集** - 验证各种操作场景
+3. **页面快照样本** - 用于提示词优化
+
+### **配置信息：**
+```typescript
+const llmConfig = {
+  apiKey: 'YOUR_OPENROUTER_API_KEY',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  model: 'anthropic/claude-3.5-sonnet',
+  temperature: 0.1,
+  maxTokens: 400
+};
+```
+
+## 📚 技术风险评估
+
+### **风险等级：中低**
+
+**主要风险：**
+1. **大模型响应稳定性** - 偶尔返回格式错误
+   - 缓解：严格的响应验证 + 降级机制
+
+2. **API调用延迟** - 影响执行速度
+   - 缓解：合理的超时设置 + 缓存策略
+
+3. **Token消耗成本** - 大量使用的成本问题
+   - 缓解：优化提示词长度 + 智能缓存
+
+**成功关键因素：**
+- 高质量的提示词工程
+- 完善的容错机制
+- 持续的优化迭代
+
+---
+
+## 🎯 如何使用此文档进行优化
+
+**明天开始优化时，请按以下步骤：**
+
+1. **读取需求** - 将此MD文件内容作为完整需求规格
+2. **确认API配置** - 提供OpenRouter API Key和模型偏好
+3. **逐步实施** - 按Phase 1-4的顺序进行开发
+4. **测试验证** - 使用文档中的示例指令进行测试
+5. **持续优化** - 根据实际效果调整提示词和逻辑
+
+**开始优化的命令：**
+```
+"请根据我之前提供的需求文档，开始优化我的Sakura AI智能解析引擎。从Phase 1开始，优先修复执行稳定性问题。"
+```
+
+## 🔥 关键修复重点
+
+### **立即需要解决的核心问题：**
+
+1. **执行中断修复**
+   - 位置：`testExecution.ts:229-244`
+   - 问题：任何步骤失败就直接 `return`，中断整个流程
+   - 解决：增加重试机制和容错策略
+
+2. **虚假成功状态修复**
+   - 位置：`testExecution.ts:237`
+   - 问题：日志显示成功但操作实际未生效
+   - 解决：增加操作效果验证机制
+
+3. **页面加载检测完善**
+   - 位置：导航操作后立即执行下一步
+   - 问题：元素可能未完全加载
+   - 解决：智能等待机制和元素可用性检测
+
+### **修复优先级：**
+```
+Phase 1 (执行稳定性) > Phase 2 (大模型集成) > Phase 3+ (功能扩展)
+```
+
+**只有先解决基础执行问题，大模型智能解析才能发挥真正的价值！**

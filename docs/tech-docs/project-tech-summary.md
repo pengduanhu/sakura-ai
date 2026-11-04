@@ -1,0 +1,218 @@
+# 🚀 Sakura AI AI 自动化测试平台 - 技术架构总结
+
+## 📋 项目概述
+
+**Sakura AI** 是一个基于 AI + MCP + Playwright 的智能化 Web 自动化测试平台，支持自然语言测试用例编写和执行。
+
+## 🏗️ 技术架构
+
+### 整体架构图
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   前端 React    │───▶│  后端 Express   │───▶│   MCP Client    │───▶│ Playwright 浏览器│
+│   (用户界面)     │    │   (API服务)     │    │  (协议转换)     │    │   (自动化执行)   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │                       │
+         │              ┌─────────────────┐              │              ┌─────────────────┐
+         └──────────────▶│   WebSocket     │◀─────────────┘              │   AI 解析器     │
+                        │   (实时通信)     │                             │ (自然语言→命令) │
+                        └─────────────────┘                             └─────────────────┘
+                                 │                                               │
+                        ┌─────────────────┐                             ┌─────────────────┐
+                        │   数据库层      │                             │   快照优化      │
+                        │ (MySQL+Prisma)  │                             │  (页面分析)     │
+                        └─────────────────┘                             └─────────────────┘
+```
+
+## 🛠️ 核心技术栈
+
+### 前端技术
+- **React 18** - 现代化前端框架
+- **TypeScript** - 类型安全的JavaScript
+- **Vite** - 快速构建工具
+- **Tailwind CSS** - 原子化CSS框架
+- **Ant Design** - 企业级UI组件库
+- **Zustand** - 轻量级状态管理
+- **React Router** - 前端路由
+- **Framer Motion** - 动画库
+
+### 后端技术
+- **Node.js + Express** - 服务器框架
+- **TypeScript** - 类型安全开发
+- **WebSocket (ws)** - 实时通信
+- **Prisma** - 现代化ORM
+- **MySQL** - 关系型数据库
+- **Bull** - 任务队列管理
+- **CORS** - 跨域支持
+
+### 自动化测试技术
+- **Playwright** - 浏览器自动化引擎
+- **MCP (Model Context Protocol)** - 标准化协议
+- **@playwright/mcp** - Playwright MCP服务器
+
+### AI技术
+- **OpenRouter API** - 多模型AI接口
+- **GPT-4o** - 默认AI模型
+- **自然语言处理** - 测试用例解析
+- **智能元素定位** - 页面元素匹配
+
+## 🔧 核心实现机制
+
+### 1. **AI驱动的测试解析**
+```typescript
+// AI解析器 (aiParser.ts)
+class AITestParser {
+  // 将自然语言转换为MCP命令
+  async parseNextStep(description: string, snapshot: any): Promise<TestStep>
+  
+  // 智能元素匹配
+  private extractPageElements(snapshot: string): PageElement[]
+  
+  // 构建AI提示词
+  private buildOperationUserPrompt(step: string, elements: PageElement[]): string
+}
+```
+
+### 2. **MCP协议集成**
+```typescript
+// MCP客户端 (mcpClient.ts)
+class PlaywrightMcpClient {
+  // 连接Playwright MCP服务器
+  async initialize(): Promise<void>
+  
+  // 执行浏览器操作
+  async callTool(command: MCPCommand): Promise<any>
+  
+  // 获取页面快照
+  async getSnapshot(): Promise<string>
+}
+```
+
+### 3. **测试执行引擎**
+```typescript
+// 测试执行服务 (testExecution.ts)
+class TestExecutionService {
+  // 执行完整测试用例
+  async executeTest(testCase: TestCase): Promise<TestResult>
+  
+  // 步骤级执行控制
+  private async executeStepWithRetry(step: TestStep): Promise<ExecutionResult>
+  
+  // 智能重试机制
+  private async executeMcpCommandWithStrategy(step: TestStep, strategy: string)
+}
+```
+
+### 4. **实时通信系统**
+```typescript
+// WebSocket管理 (websocket.ts)
+class WebSocketManager {
+  // 广播测试状态更新
+  broadcast(event: string, data: any): void
+  
+  // 客户端连接管理
+  handleConnection(ws: WebSocket): void
+}
+```
+
+## 📊 数据库设计
+
+### 核心数据模型
+```sql
+-- 测试用例表
+test_cases (id, name, description, steps, assertions, created_at)
+
+-- 测试运行表  
+test_runs (id, case_id, status, started_at, completed_at)
+
+-- 测试结果表
+test_run_results (id, run_id, step_index, status, screenshot_path)
+
+-- 用户管理表
+users (id, username, email, role)
+
+-- AI运行记录表
+ai_runs (id, prompt_id, token_used, cost_usd, executed_at)
+```
+
+## 🎯 核心功能实现
+
+### 1. **自然语言测试编写**
+- 用户用中文描述测试步骤
+- AI自动解析为可执行命令
+- 支持复杂交互场景
+
+### 2. **智能元素定位**
+- 页面快照分析
+- AI驱动的元素匹配
+- 多策略重试机制
+
+### 3. **实时执行监控**
+- WebSocket实时状态更新
+- 步骤级执行日志
+- 自动截图保存
+
+### 4. **多级下拉支持**
+- 级联选择自动等待
+- 动态元素识别
+- 智能页面状态检测
+
+### 5. **滚动操作支持**
+- 6种滚动操作类型
+- 智能滚动距离计算
+- 元素可见性确保
+
+## 🚀 部署架构
+
+### 开发环境
+```bash
+# 前端开发服务器 (Vite)
+npm run dev:frontend  # localhost:5173
+
+# 后端开发服务器 (Express)  
+npm run dev:server    # localhost:3001
+
+# 数据库 (MySQL)
+# localhost:3306
+```
+
+### 生产环境
+```bash
+# 构建前端
+npm run build
+
+# 启动生产服务器
+npm start
+
+# 数据库迁移
+npx prisma migrate deploy
+```
+
+## 🔄 工作流程
+
+### 测试执行流程
+1. **用户输入** - 自然语言测试描述
+2. **AI解析** - 转换为结构化步骤
+3. **MCP转换** - 生成Playwright命令
+4. **浏览器执行** - 自动化操作执行
+5. **结果收集** - 截图、日志、状态
+6. **实时反馈** - WebSocket推送更新
+
+### 数据流向
+```
+用户界面 → API请求 → 测试服务 → AI解析 → MCP命令 → Playwright → 浏览器
+    ↑                                                                    ↓
+WebSocket ← 状态更新 ← 执行结果 ← 截图日志 ← 操作反馈 ← 页面响应 ←────────┘
+```
+
+## 💡 技术亮点
+
+1. **AI驱动** - 自然语言直接转换为自动化测试
+2. **标准协议** - 基于MCP协议，易于扩展
+3. **实时反馈** - WebSocket实现毫秒级状态同步
+4. **智能重试** - 多策略容错机制
+5. **模块化设计** - 高内聚低耦合的架构
+6. **类型安全** - 全栈TypeScript开发
+7. **现代化UI** - 响应式设计，用户体验优秀
+
+这是一个集成了最新AI技术、现代Web开发框架和标准化协议的创新型自动化测试平台！
